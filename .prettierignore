@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+bun.lock
+
+# Build outputs
+dist/
+*.zip
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+.cursor/
+
+# Misc
+.DS_Store
+*.map
+

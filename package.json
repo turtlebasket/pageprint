@@ -1,0 +1,56 @@
+{
+  "name": "pageprint",
+  "version": "0.1.0",
+  "description": "Browser extension that converts web pages to clean, print-optimized format",
+  "type": "module",
+  "module": "index.ts",
+  "scripts": {
+    "dev": "bun run build:watch",
+    "build": "bun run build:extension && bun run build:popup",
+    "build:watch": "concurrently \"bun run build:extension --watch\" \"bun run build:popup --watch\"",
+    "build:extension": "bun build.ts",
+    "build:popup": "vite build",
+    "package": "bun run build && bun run zip",
+    "zip": "cd dist && zip -r ../pageprint.zip .",
+    "test": "bun test",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^2.4.6",
+    "@types/bun": "latest",
+    "@types/chrome": "^0.0.246",
+    "@types/node": "^20.8.0",
+    "@typescript-eslint/eslint-plugin": "^6.7.4",
+    "@typescript-eslint/parser": "^6.7.4",
+    "autoprefixer": "^10.4.16",
+    "concurrently": "^8.2.1",
+    "eslint": "^8.50.0",
+    "eslint-plugin-svelte": "^3.13.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "postcss": "^8.4.31",
+    "prettier": "^3.7.4",
+    "prettier-plugin-svelte": "^3.4.1",
+    "svelte": "^4.2.1",
+    "svelte-check": "^3.5.2",
+    "svelte-eslint-parser": "^1.4.1",
+    "tailwindcss": "^3.3.5",
+    "typescript": "^5.2.2",
+    "vite": "^4.4.9"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.4.4",
+    "@tailwindcss/typography": "^0.5.10",
+    "canvas": "^2.11.2",
+    "jsdom": "^22.1.0",
+    "ts-pattern": "^5.9.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,svelte,json,css,md}": "prettier --write",
+    "src/**/*.{ts,tsx,svelte}": "eslint --fix"
+  }
+}
