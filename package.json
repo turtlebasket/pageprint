@@ -12,6 +12,7 @@
     "build:popup": "vite build",
     "package": "bun run build && bun run zip",
     "zip": "cd dist && zip -r ../pageprint.zip .",
+    "release": "./release-version",
     "test": "bun test",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
