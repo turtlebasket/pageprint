@@ -46,7 +46,7 @@ git add package.json src/manifest.json
 
 # Commit
 echo "Committing changes..."
-git commit -m "Release v$VERSION"
+git commit -m "v$VERSION"
 
 # Tag
 echo "Creating tag v$VERSION..."
