@@ -13,7 +13,96 @@ export class ContentExtractor {
       elements.forEach((el) => el.remove());
     });
 
+    this.processImages(tempDiv);
+
     return tempDiv.innerHTML;
+  }
+
+  private static processImages(container: HTMLElement): void {
+    const images = container.querySelectorAll("img");
+    const baseUrl = window.location.href;
+
+    images.forEach((img) => {
+      const lazyAttributes = [
+        "data-src",
+        "data-lazy-src",
+        "data-original",
+        "data-srcset",
+        "data-lazy-srcset",
+      ];
+
+      for (const attr of lazyAttributes) {
+        if (img.hasAttribute(attr)) {
+          const value = img.getAttribute(attr);
+          if (value !== null && value.length > 0 && (!img.src || img.src === baseUrl)) {
+            if (attr.includes("srcset")) {
+              img.setAttribute("srcset", value);
+            } else {
+              img.src = value;
+            }
+          }
+        }
+      }
+
+      if (img.src && img.src.length > 0 && img.src !== baseUrl) {
+        if (!img.src.startsWith("data:") && !img.src.startsWith("http")) {
+          try {
+            const absoluteUrl = new URL(img.src, baseUrl);
+            img.src = absoluteUrl.href;
+          } catch {
+            img.remove();
+            return;
+          }
+        }
+      } else {
+        img.remove();
+        return;
+      }
+
+      if (img.hasAttribute("srcset")) {
+        const srcset = img.getAttribute("srcset");
+        if (srcset !== null && srcset.length > 0) {
+          const processedSrcset = srcset
+            .split(",")
+            .map((entry) => {
+              const parts = entry.trim().split(/\s+/);
+              const url = parts[0];
+              const descriptor = parts[1];
+              if (
+                url !== undefined &&
+                url.length > 0 &&
+                !url.startsWith("data:") &&
+                !url.startsWith("http")
+              ) {
+                try {
+                  const absoluteUrl = new URL(url, baseUrl);
+                  return descriptor !== undefined
+                    ? `${absoluteUrl.href} ${descriptor}`
+                    : absoluteUrl.href;
+                } catch {
+                  return "";
+                }
+              }
+              return entry.trim();
+            })
+            .filter((entry) => entry.length > 0)
+            .join(", ");
+
+          if (processedSrcset.length > 0) {
+            img.setAttribute("srcset", processedSrcset);
+          }
+        }
+      }
+
+      [
+        "loading",
+        "data-src",
+        "data-lazy-src",
+        "data-original",
+        "data-srcset",
+        "data-lazy-srcset",
+      ].forEach((attr) => img.removeAttribute(attr));
+    });
   }
 
   public static extractContent(document: Document): ExtractedContent | null {
