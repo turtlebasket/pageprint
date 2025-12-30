@@ -13,6 +13,8 @@
   let isGenerating = false;
   let error = "";
   let success = false;
+  let isCheckingReadability = true;
+  let isReadable = false;
 
   let columns = 2;
   let fontSize = 11;
@@ -20,7 +22,7 @@
   let horizontalMargin = 0.5;
   let pageSize: "A4" | "Letter" = "Letter";
 
-  onMount(() => {
+  onMount(async () => {
     chrome.storage.local.get(
       ["columns", "fontSize", "verticalMargin", "horizontalMargin", "pageSize"],
       (result) => {
@@ -31,6 +33,26 @@
         if (result["pageSize"] !== undefined) pageSize = result["pageSize"];
       }
     );
+
+    try {
+      console.log("[Popup] Checking page readability...");
+      const response = await chrome.runtime.sendMessage<MessageRequest, MessageResponse<boolean>>({
+        type: MessageType.CHECK_READABILITY,
+      });
+
+      if (response.success) {
+        isReadable = response.data;
+        console.log("[Popup] Page is readable:", isReadable);
+      } else {
+        console.error("[Popup] Readability check failed:", response.error);
+        isReadable = false;
+      }
+    } catch (err) {
+      console.error("[Popup] Failed to check readability:", err);
+      isReadable = false;
+    } finally {
+      isCheckingReadability = false;
+    }
   });
 
   function saveSettings() {
@@ -145,11 +167,40 @@
     <p class="text-sm text-gray-600">Convert this page to a print-friendly PDF</p>
   </header>
 
-  {#if !success && !isExtracting && !isGenerating}
+  {#if isCheckingReadability}
+    <main class="flex flex-col items-center justify-center min-h-[80px]">
+      <div class="text-center">
+        <div
+          class="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"
+        ></div>
+        <p class="text-sm text-gray-600">Checking page...</p>
+      </div>
+    </main>
+  {:else if !isReadable}
+    <main class="flex flex-col items-center justify-center min-h-[80px]">
+      <div
+        class="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 w-full"
+      >
+        <span class="text-lg">ℹ️</span>
+        <div class="flex-1">
+          <p class="text-sm text-amber-900 font-medium mb-1">
+            This page isn't suitable for printing
+          </p>
+          <p class="text-xs text-amber-800">
+            PagePrint works best with article-style content. This page doesn't appear to have enough
+            readable text to convert.
+          </p>
+        </div>
+      </div>
+    </main>
+  {:else if !success && !isExtracting && !isGenerating}
     <div class="mb-4 space-y-3">
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1"> Page Size </label>
+        <label for="pageSize" class="block text-sm font-medium text-gray-700 mb-1">
+          Page Size
+        </label>
         <select
+          id="pageSize"
           bind:value={pageSize}
           class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
@@ -159,10 +210,11 @@
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="columns" class="block text-sm font-medium text-gray-700 mb-1">
           Columns: {columns}
         </label>
         <input
+          id="columns"
           type="range"
           min="1"
           max="3"
@@ -172,10 +224,11 @@
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="fontSize" class="block text-sm font-medium text-gray-700 mb-1">
           Font Size: {fontSize}pt
         </label>
         <input
+          id="fontSize"
           type="range"
           min="8"
           max="14"
@@ -185,10 +238,11 @@
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="verticalMargin" class="block text-sm font-medium text-gray-700 mb-1">
           Vertical Margin: {verticalMargin}in
         </label>
         <input
+          id="verticalMargin"
           type="range"
           min="0.25"
           max="1.5"
@@ -199,10 +253,11 @@
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="horizontalMargin" class="block text-sm font-medium text-gray-700 mb-1">
           Horizontal Margin: {horizontalMargin}in
         </label>
         <input
+          id="horizontalMargin"
           type="range"
           min="0.25"
           max="1.5"
@@ -212,51 +267,59 @@
         />
       </div>
     </div>
+
+    <main class="flex flex-col items-center justify-center min-h-[80px]">
+      {#if error}
+        <div
+          class="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 mb-4 w-full"
+        >
+          <span class="text-lg">⚠️</span>
+          <span class="text-sm text-red-800">{error}</span>
+        </div>
+        <button
+          class="bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200"
+          on:click={extractAndGeneratePDF}
+        >
+          Try Again
+        </button>
+      {:else if success}
+        <div
+          class="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3 w-full"
+        >
+          <span class="text-lg">✅</span>
+          <span class="text-sm text-green-800">PDF generated! Check your print dialog.</span>
+        </div>
+      {:else if isExtracting || isGenerating}
+        <div class="text-center">
+          <div
+            class="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"
+          ></div>
+          <p class="text-sm text-gray-600">
+            {isExtracting ? "Extracting content..." : "Generating PDF..."}
+          </p>
+        </div>
+      {:else}
+        <button
+          class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 w-full"
+          on:click={extractAndGeneratePDF}
+        >
+          Generate PDF
+        </button>
+      {/if}
+    </main>
   {/if}
 
-  <main class="flex flex-col items-center justify-center min-h-[80px]">
-    {#if error}
-      <div
-        class="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3 mb-4 w-full"
-      >
-        <span class="text-lg">⚠️</span>
-        <span class="text-sm text-red-800">{error}</span>
-      </div>
-      <button
-        class="bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200"
-        on:click={extractAndGeneratePDF}
-      >
-        Try Again
-      </button>
-    {:else if success}
-      <div
-        class="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3 w-full"
-      >
-        <span class="text-lg">✅</span>
-        <span class="text-sm text-green-800">PDF generated! Check your print dialog.</span>
-      </div>
-    {:else if isExtracting || isGenerating}
-      <div class="text-center">
-        <div
-          class="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"
-        ></div>
-        <p class="text-sm text-gray-600">
-          {isExtracting ? "Extracting content..." : "Generating PDF..."}
-        </p>
-      </div>
-    {:else}
-      <button
-        class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 w-full"
-        on:click={extractAndGeneratePDF}
-      >
-        Generate PDF
-      </button>
-    {/if}
-  </main>
-
-  <footer class="mt-4 pt-3 border-t border-gray-200 text-center">
-    <p class="text-xs text-gray-500">Extracts readable content and formats for printing</p>
-  </footer>
+  {#if !isCheckingReadability}
+    <footer class="mt-4 pt-3 border-t border-gray-200 text-center">
+      <p class="text-xs text-gray-500">
+        {#if isReadable}
+          Extracts readable content and formats for printing
+        {:else}
+          Try PagePrint on articles, blog posts, or text-heavy pages
+        {/if}
+      </p>
+    </footer>
+  {/if}
 </div>
 
 <style>

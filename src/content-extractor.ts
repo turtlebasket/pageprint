@@ -1,7 +1,17 @@
-import { Readability } from "@mozilla/readability";
+import { Readability, isProbablyReaderable } from "@mozilla/readability";
 import type { ExtractedContent } from "./types";
 
 export class ContentExtractor {
+  public static isProbablyReaderable(document: Document): boolean {
+    try {
+      const result = isProbablyReaderable(document);
+      console.log("[ContentExtractor] Readability check result:", result);
+      return result;
+    } catch (error) {
+      console.error("[ContentExtractor] Readability check failed:", error);
+      return false;
+    }
+  }
   private static stripUnwantedElements(htmlContent: string): string {
     const tempDiv = window.document.createElement("div");
     tempDiv.innerHTML = htmlContent;

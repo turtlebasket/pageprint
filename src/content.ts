@@ -56,6 +56,15 @@ if (window.__pageprint_loaded) {
               });
             });
         })
+        .with({ type: MessageType.CHECK_READABILITY }, () => {
+          console.log("[Content Script] Received CHECK_READABILITY message");
+          const isReadable = ContentExtractor.isProbablyReaderable(document);
+          console.log("[Content Script] Page is readable:", isReadable);
+          sendResponse({
+            success: true,
+            data: isReadable,
+          });
+        })
         .with({ type: MessageType.PRINT }, () => {
           console.log("[Content Script] Received PRINT message, triggering print dialog...");
           window.print();

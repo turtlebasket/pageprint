@@ -12,6 +12,7 @@ export enum MessageType {
   EXTRACT_CONTENT = "EXTRACT_CONTENT",
   GENERATE_PDF = "GENERATE_PDF",
   PRINT = "PRINT",
+  CHECK_READABILITY = "CHECK_READABILITY",
 }
 
 export type MessageRequest =
@@ -20,7 +21,8 @@ export type MessageRequest =
       type: MessageType.GENERATE_PDF;
       data: { content: ExtractedContent; options?: PDFOptions };
     }
-  | { type: MessageType.PRINT };
+  | { type: MessageType.PRINT }
+  | { type: MessageType.CHECK_READABILITY };
 
 export type MessageResponse<T = unknown> =
   | { success: true; data: T }

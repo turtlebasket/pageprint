@@ -25,6 +25,9 @@ chrome.runtime.onMessage.addListener(
       .with({ type: MessageType.GENERATE_PDF }, (req) => {
         handleGeneratePDF(req.data, sendResponse);
       })
+      .with({ type: MessageType.CHECK_READABILITY }, () => {
+        handleCheckReadability(sendResponse);
+      })
       .with({ type: MessageType.PRINT }, () => {
         console.log("[Background] Ignoring PRINT message (handled in content script)");
       })
@@ -34,53 +37,65 @@ chrome.runtime.onMessage.addListener(
   }
 );
 
+function isInternalPage(url: string): boolean {
+  return (
+    url.startsWith("chrome://") ||
+    url.startsWith("chrome-extension://") ||
+    url.startsWith("edge://") ||
+    url.startsWith("about:") ||
+    url.startsWith("view-source:")
+  );
+}
+
+interface ValidTab extends chrome.tabs.Tab {
+  id: number;
+  url: string;
+}
+
+async function getActiveTab(): Promise<ValidTab> {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs[0];
+
+  if (!tab || typeof tab.id !== "number") {
+    throw new Error("No active tab found");
+  }
+
+  if (typeof tab.url !== "string" || !tab.url) {
+    throw new Error("Cannot access this page");
+  }
+
+  return tab as ValidTab;
+}
+
+async function ensureContentScript(tabId: number): Promise<void> {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content.js"],
+    });
+    console.log("[Background] Content script injected");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  } catch {
+    console.log("[Background] Content script already loaded or injection failed");
+  }
+}
+
 async function handleExtractContent(
   sendResponse: (response: MessageResponse<ExtractedContent>) => void
 ): Promise<void> {
   try {
     console.log("[Background] Querying active tab...");
-    const tabs = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
-    const tab = tabs[0];
+    const tab = await getActiveTab();
 
-    if (!tab?.id) {
-      console.error("[Background] No active tab found");
-      throw new Error("No active tab found");
-    }
-
-    if (!tab.url) {
-      throw new Error("Cannot access this page");
-    }
-
-    // Check if URL is accessible
-    if (
-      tab.url.startsWith("chrome://") ||
-      tab.url.startsWith("chrome-extension://") ||
-      tab.url.startsWith("edge://") ||
-      tab.url.startsWith("about:") ||
-      tab.url.startsWith("view-source:")
-    ) {
+    if (isInternalPage(tab.url)) {
       throw new Error("Cannot extract content from browser internal pages");
     }
 
     console.log(`[Background] Found active tab: ${tab.id}, URL: ${tab.url}`);
 
-    // Try to inject content script in case it's not loaded yet
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ["content.js"],
-      });
-      console.log("[Background] Content script injected");
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    } catch (injectError) {
-      console.log("[Background] Content script already loaded or injection failed");
-    }
+    await ensureContentScript(tab.id);
 
     console.log("[Background] Sending EXTRACT_CONTENT message to content script...");
-
     const response = await chrome.tabs.sendMessage<
       MessageRequest,
       MessageResponse<ExtractedContent>
@@ -112,6 +127,41 @@ async function handleExtractContent(
         error: errorMessage,
       });
     }
+  }
+}
+
+async function handleCheckReadability(
+  sendResponse: (response: MessageResponse<boolean>) => void
+): Promise<void> {
+  try {
+    console.log("[Background] Checking page readability...");
+    const tab = await getActiveTab();
+
+    if (isInternalPage(tab.url)) {
+      sendResponse({ success: true, data: false });
+      return;
+    }
+
+    console.log(`[Background] Checking readability for tab: ${tab.id}`);
+
+    await ensureContentScript(tab.id);
+
+    console.log("[Background] Sending CHECK_READABILITY message to content script...");
+    const response = await chrome.tabs.sendMessage<MessageRequest, MessageResponse<boolean>>(
+      tab.id,
+      {
+        type: MessageType.CHECK_READABILITY,
+      }
+    );
+
+    console.log(
+      "[Background] Readability check result:",
+      response.success ? response.data : "failed"
+    );
+    sendResponse(response);
+  } catch (error) {
+    console.error("[Background] Failed to check readability:", error);
+    sendResponse({ success: true, data: false });
   }
 }
 
@@ -151,7 +201,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.action.onClicked.addListener(async (tab: chrome.tabs.Tab) => {
-  if (!tab.id) return;
+  if (typeof tab.id !== "number") return;
 
   try {
     console.log("[Background] Action clicked, extracting content...");
@@ -162,7 +212,7 @@ chrome.action.onClicked.addListener(async (tab: chrome.tabs.Tab) => {
       type: MessageType.EXTRACT_CONTENT,
     });
 
-    if (response?.success && response.data) {
+    if (response.success) {
       console.log("[Background] Content extracted, generating PDF...");
       const pdfResponse = await chrome.runtime.sendMessage<
         MessageRequest,
@@ -172,10 +222,9 @@ chrome.action.onClicked.addListener(async (tab: chrome.tabs.Tab) => {
         data: { content: response.data },
       });
 
-      if (pdfResponse?.success) {
+      if (pdfResponse.success) {
         console.log("[Background] PDF generated, opening print dialog...");
-        const { htmlContent, title } = pdfResponse.data;
-        await downloadHTMLAsPDF(htmlContent, title);
+        await downloadHTMLAsPDF(pdfResponse.data.htmlContent);
       }
     }
   } catch (error) {
@@ -183,7 +232,7 @@ chrome.action.onClicked.addListener(async (tab: chrome.tabs.Tab) => {
   }
 });
 
-async function downloadHTMLAsPDF(htmlContent: string, _title: string): Promise<void> {
+async function downloadHTMLAsPDF(htmlContent: string): Promise<void> {
   console.log("[Background] Creating print tab...");
 
   const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`;
@@ -193,7 +242,7 @@ async function downloadHTMLAsPDF(htmlContent: string, _title: string): Promise<v
     active: true,
   });
 
-  if (!tab.id) {
+  if (typeof tab.id !== "number") {
     console.error("[Background] Failed to create print tab");
     return;
   }
