@@ -24,61 +24,6 @@
   let pageSize: "A4" | "Letter" = "Letter";
   let linkHandling: LinkHandling = "references";
 
-  interface LinkInfo {
-    id: number;
-    url: string;
-  }
-
-  function processLinks(doc: Document, mode: LinkHandling): LinkInfo[] {
-    if (mode === "embed") {
-      return [];
-    }
-
-    const links: LinkInfo[] = [];
-    let linkCounter = 0;
-    const article = doc.querySelector(".readable-content");
-    if (!article) return [];
-
-    const anchors = article.querySelectorAll("a[href]");
-
-    if (mode === "none") {
-      anchors.forEach((anchor) => {
-        const textNode = doc.createTextNode(anchor.textContent || "");
-        anchor.parentNode?.replaceChild(textNode, anchor);
-      });
-    } else if (mode === "references") {
-      anchors.forEach((anchor) => {
-        const href = anchor.getAttribute("href");
-        if (!href) return;
-
-        linkCounter++;
-        const linkId = linkCounter;
-        const textContent = anchor.textContent || "";
-
-        links.push({
-          id: linkId,
-          url: href,
-        });
-
-        const replacementText = `${textContent} [L${linkId}]`;
-        const textNode = doc.createTextNode(replacementText);
-        anchor.parentNode?.replaceChild(textNode, anchor);
-      });
-
-      if (links.length > 0) {
-        const linksSection = doc.createElement("section");
-        linksSection.className = "link-references";
-        linksSection.innerHTML = `
-          <h2>Links</h2>
-          ${links.map((link) => `<div class="link-reference-item"><span class="link-reference-id">[L${link.id}]</span>${link.url}</div>`).join("\n")}
-        `;
-        article.appendChild(linksSection);
-      }
-    }
-
-    return links;
-  }
-
   onMount(async () => {
     chrome.storage.local.get(
       ["columns", "fontSize", "verticalMargin", "horizontalMargin", "pageSize", "linkHandling"],
@@ -130,28 +75,25 @@
 
   async function extractAndGeneratePDF() {
     try {
-      console.log("[Popup] Starting extraction and PDF generation...");
+      console.log("[Popup] Starting extraction...");
       error = "";
       isExtracting = true;
 
-      console.log("[Popup] Sending EXTRACT_CONTENT message to background...");
       const response = await chrome.runtime.sendMessage<
         MessageRequest,
         MessageResponse<ExtractedContent>
       >({
         type: MessageType.EXTRACT_CONTENT,
       });
-      console.log("[Popup] Received extraction response:", response);
 
       if (!response.success) {
-        console.error("[Popup] Extraction failed:", response.error);
         throw new Error(response.error || "Failed to extract content");
       }
 
-      const extractContent = response.data;
-      console.log("[Popup] Content extracted successfully:", {
-        title: extractContent.title,
-        contentLength: extractContent.content.length,
+      const extractedContent = response.data;
+      console.log("[Popup] Content extracted:", {
+        title: extractedContent.title,
+        contentLength: extractedContent.content.length,
       });
       isExtracting = false;
 
@@ -164,59 +106,40 @@
         linkHandling,
       };
 
-      console.log("[Popup] Sending GENERATE_PDF message to background...");
+      console.log("[Popup] Generating editor HTML...");
       isGenerating = true;
       const pdfResponse = await chrome.runtime.sendMessage<
         MessageRequest,
-        MessageResponse<{ htmlContent: string; title: string }>
+        MessageResponse<{ htmlContent: string; editorHtml: string; title: string }>
       >({
         type: MessageType.GENERATE_PDF,
-        data: { content: extractContent, options },
+        data: { content: extractedContent, options },
       });
-      console.log("[Popup] Received PDF response:", pdfResponse);
 
       if (!pdfResponse.success) {
-        console.error("[Popup] PDF generation failed:", pdfResponse.error);
-        throw new Error(pdfResponse.error || "Failed to generate PDF");
+        throw new Error(pdfResponse.error || "Failed to generate content");
       }
 
-      const { htmlContent } = pdfResponse.data;
-      console.log("[Popup] PDF HTML content received, length:", htmlContent.length);
+      const { editorHtml } = pdfResponse.data;
 
-      console.log("[Popup] Opening print window...");
-      const printWindow = window.open("", "_blank", "width=800,height=600");
-      if (!printWindow) {
-        console.error("[Popup] Failed to open print window");
-        throw new Error("Failed to open print window");
+      console.log("[Popup] Opening editor window...");
+      const editorWindow = window.open("", "_blank", "width=800,height=700");
+      if (!editorWindow) {
+        throw new Error("Failed to open editor window — check your popup blocker");
       }
 
-      console.log("[Popup] Writing HTML to print window...");
-      printWindow.document.write(htmlContent);
-      printWindow.document.close();
-
-      console.log("[Popup] Processing links with mode:", linkHandling);
-      processLinks(printWindow.document, linkHandling);
-      console.log("[Popup] Links processed");
-
-      setTimeout(() => {
-        console.log("[Popup] Triggering print dialog...");
-        printWindow.print();
-        setTimeout(() => {
-          if (!printWindow.closed) {
-            printWindow.close();
-          }
-        }, 1000);
-      }, 500);
+      editorWindow.document.write(editorHtml);
+      editorWindow.document.close();
 
       success = true;
       isGenerating = false;
-      console.log("[Popup] PDF generation process complete");
+      console.log("[Popup] Editor window opened");
 
       setTimeout(() => {
         window.close();
-      }, 2000);
+      }, 1000);
     } catch (err) {
-      console.error("[Popup] PDF generation error:", err);
+      console.error("[Popup] Error:", err);
       error = err instanceof Error ? err.message : "An unknown error occurred";
       isExtracting = false;
       isGenerating = false;

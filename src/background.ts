@@ -69,6 +69,20 @@ async function getActiveTab(): Promise<ValidTab> {
 
 async function ensureContentScript(tabId: number): Promise<void> {
   try {
+    // Check if content script is already loaded before injecting
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => !!window.__pageprint_loaded,
+    });
+    if (result?.result) {
+      console.log("[Background] Content script already loaded");
+      return;
+    }
+  } catch {
+    // Page may not allow script execution at all — will fail below too
+  }
+
+  try {
     await chrome.scripting.executeScript({
       target: { tabId },
       files: ["content.js"],
@@ -76,7 +90,7 @@ async function ensureContentScript(tabId: number): Promise<void> {
     console.log("[Background] Content script injected");
     await new Promise((resolve) => setTimeout(resolve, 100));
   } catch {
-    console.log("[Background] Content script already loaded or injection failed");
+    console.log("[Background] Content script injection failed");
   }
 }
 
@@ -167,23 +181,28 @@ async function handleCheckReadability(
 
 async function handleGeneratePDF(
   { content, options }: { content: ExtractedContent; options?: PDFOptions },
-  sendResponse: (response: MessageResponse<{ htmlContent: string; title: string }>) => void
+  sendResponse: (
+    response: MessageResponse<{ htmlContent: string; editorHtml: string; title: string }>
+  ) => void
 ): Promise<void> {
   try {
-    console.log("[Background] Generating PDF...");
+    console.log("[Background] Generating PDF and editor HTML...");
     console.log(
       `[Background] Content title: "${content.title}", length: ${content.content.length} chars`
     );
     console.log("[Background] PDF options:", options);
 
     const htmlContent = PrintStyles.createPrintableHTML(content, options);
+    const editorScriptUrl = chrome.runtime.getURL("editor.js");
+    const editorHtml = PrintStyles.createEditorHTML(content, options, editorScriptUrl);
     console.log(`[Background] Printable HTML generated, length: ${htmlContent.length} chars`);
-    console.log("[Background] PDF generation successful");
+    console.log(`[Background] Editor HTML generated, length: ${editorHtml.length} chars`);
 
     sendResponse({
       success: true,
       data: {
         htmlContent,
+        editorHtml,
         title: content.title,
       },
     });

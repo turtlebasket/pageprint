@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "bun run build:watch",
     "build": "bun run build:extension && bun run build:popup",
-    "build:watch": "concurrently \"bun run build:extension --watch\" \"bun run build:popup --watch\"",
+    "build:watch": "concurrently \"bun run build:extension:dev --watch\" \"bun run build:popup --watch\"",
     "build:extension": "bun build.ts",
+    "build:extension:dev": "bun build.ts --dev",
     "build:popup": "vite build",
     "package": "bun run build && bun run zip",
     "zip": "cd dist && zip -r ../pageprint.zip .",

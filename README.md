@@ -2,6 +2,10 @@
 
 [![GitHub release](https://img.shields.io/github/v/release/turtlebasket/pageprint)](https://github.com/turtlebasket/pageprint/releases/latest)
 
+Convert reader mode-compatible webpages to print-ready documents
+
+![](graphic.png)
+
 ## Installation
 
 ### From GitHub Releases

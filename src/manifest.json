@@ -33,7 +33,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["icons/*"],
+      "resources": ["icons/*", "editor.js"],
       "matches": ["<all_urls>"]
     }
   ]

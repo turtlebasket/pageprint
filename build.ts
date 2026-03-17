@@ -3,6 +3,7 @@ import { mkdir } from "fs/promises";
 import { deflateSync } from "zlib";
 
 const ICON_SIZES = [16, 32, 48, 128] as const;
+const IS_DEV = process.argv.includes("--dev");
 
 function crc32(data: Uint8Array): number {
   let crc = 0xffffffff;
@@ -34,6 +35,8 @@ function generatePng(size: number): Uint8Array {
   const blue = [59, 130, 246, 255]; // #3B82F6
   const white = [255, 255, 255, 255];
 
+  const red = [220, 38, 38, 255]; // #DC2626
+
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const i = (y * size + x) * 4;
@@ -41,6 +44,22 @@ function generatePng(size: number): Uint8Array {
       const inDocY = y >= size * 0.375 && y < size * 0.625;
       const color = inDocX && inDocY ? white : blue;
       pixels.set(color, i);
+    }
+  }
+
+  // DEV badge: red circle in bottom-right corner
+  if (IS_DEV) {
+    const radius = Math.max(Math.floor(size * 0.25), 3);
+    const cx = size - radius;
+    const cy = size - radius;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = x - cx;
+        const dy = y - cy;
+        if (dx * dx + dy * dy <= radius * radius) {
+          pixels.set(red, (y * size + x) * 4);
+        }
+      }
     }
   }
 
@@ -92,9 +111,12 @@ async function buildExtension() {
   try {
     await generateIcons();
 
-    // Copy manifest
-    const manifest = await Bun.file("src/manifest.json").text();
-    await Bun.write("dist/manifest.json", manifest);
+    // Copy manifest (rename for dev builds)
+    const manifestJson = await Bun.file("src/manifest.json").json();
+    if (IS_DEV) {
+      manifestJson.name = "PagePrint DEV";
+    }
+    await Bun.write("dist/manifest.json", JSON.stringify(manifestJson, null, 2));
 
     await build({
       entrypoints: ["src/content.ts"],
@@ -107,6 +129,15 @@ async function buildExtension() {
 
     await build({
       entrypoints: ["src/background.ts"],
+      outdir: "dist",
+      target: "browser",
+      format: "esm",
+      minify: true,
+      sourcemap: "external",
+    });
+
+    await build({
+      entrypoints: ["src/editor.ts"],
       outdir: "dist",
       target: "browser",
       format: "esm",
