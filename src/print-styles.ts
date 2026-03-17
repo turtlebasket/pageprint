@@ -139,7 +139,30 @@ export class PrintStyles {
 
       a {
         color: inherit;
-        text-decoration: none;
+        text-decoration: underline;
+      }
+
+      .link-references {
+        margin-top: 2rem;
+        padding-top: 1rem;
+        border-top: 1px solid #ccc;
+        break-before: auto;
+      }
+
+      .link-references h2 {
+        font-size: 1.1rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .link-reference-item {
+        margin: 0.35rem 0;
+        font-size: 0.85rem;
+        word-break: break-all;
+      }
+
+      .link-reference-id {
+        font-weight: bold;
+        margin-right: 0.5rem;
       }
 
       code {

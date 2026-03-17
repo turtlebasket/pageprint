@@ -28,6 +28,8 @@ export type MessageResponse<T = unknown> =
   | { success: true; data: T }
   | { success: false; error: string };
 
+export type LinkHandling = "none" | "embed" | "references";
+
 export interface PDFOptions {
   columns?: number;
   fontSize?: number;
@@ -36,4 +38,5 @@ export interface PDFOptions {
   showByline?: boolean;
   showExcerpt?: boolean;
   pageSize?: "A4" | "Letter";
+  linkHandling?: LinkHandling;
 }

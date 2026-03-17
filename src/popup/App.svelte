@@ -6,6 +6,7 @@
     type MessageResponse,
     type ExtractedContent,
     type PDFOptions,
+    type LinkHandling,
   } from "../types";
   import "../styles.css";
 
@@ -21,16 +22,73 @@
   let verticalMargin = 0.5;
   let horizontalMargin = 0.5;
   let pageSize: "A4" | "Letter" = "Letter";
+  let linkHandling: LinkHandling = "references";
+
+  interface LinkInfo {
+    id: number;
+    url: string;
+  }
+
+  function processLinks(doc: Document, mode: LinkHandling): LinkInfo[] {
+    if (mode === "embed") {
+      return [];
+    }
+
+    const links: LinkInfo[] = [];
+    let linkCounter = 0;
+    const article = doc.querySelector(".readable-content");
+    if (!article) return [];
+
+    const anchors = article.querySelectorAll("a[href]");
+
+    if (mode === "none") {
+      anchors.forEach((anchor) => {
+        const textNode = doc.createTextNode(anchor.textContent || "");
+        anchor.parentNode?.replaceChild(textNode, anchor);
+      });
+    } else if (mode === "references") {
+      anchors.forEach((anchor) => {
+        const href = anchor.getAttribute("href");
+        if (!href) return;
+
+        linkCounter++;
+        const linkId = linkCounter;
+        const textContent = anchor.textContent || "";
+
+        links.push({
+          id: linkId,
+          url: href,
+        });
+
+        const replacementText = `${textContent} [L${linkId}]`;
+        const textNode = doc.createTextNode(replacementText);
+        anchor.parentNode?.replaceChild(textNode, anchor);
+      });
+
+      if (links.length > 0) {
+        const linksSection = doc.createElement("section");
+        linksSection.className = "link-references";
+        linksSection.innerHTML = `
+          <h2>Links</h2>
+          ${links.map((link) => `<div class="link-reference-item"><span class="link-reference-id">[L${link.id}]</span>${link.url}</div>`).join("\n")}
+        `;
+        article.appendChild(linksSection);
+      }
+    }
+
+    return links;
+  }
 
   onMount(async () => {
     chrome.storage.local.get(
-      ["columns", "fontSize", "verticalMargin", "horizontalMargin", "pageSize"],
+      ["columns", "fontSize", "verticalMargin", "horizontalMargin", "pageSize", "linkHandling"],
       (result) => {
         if (result["columns"] !== undefined) columns = result["columns"];
         if (result["fontSize"] !== undefined) fontSize = result["fontSize"];
         if (result["verticalMargin"] !== undefined) verticalMargin = result["verticalMargin"];
         if (result["horizontalMargin"] !== undefined) horizontalMargin = result["horizontalMargin"];
         if (result["pageSize"] !== undefined) pageSize = result["pageSize"];
+        if (result["linkHandling"] !== undefined) linkHandling = result["linkHandling"];
       }
     );
 
@@ -62,6 +120,7 @@
       verticalMargin,
       horizontalMargin,
       pageSize,
+      linkHandling,
     });
   }
 
@@ -102,6 +161,7 @@
         verticalMargin,
         horizontalMargin,
         pageSize,
+        linkHandling,
       };
 
       console.log("[Popup] Sending GENERATE_PDF message to background...");
@@ -133,7 +193,10 @@
       console.log("[Popup] Writing HTML to print window...");
       printWindow.document.write(htmlContent);
       printWindow.document.close();
-      console.log("[Popup] HTML written to print window");
+
+      console.log("[Popup] Processing links with mode:", linkHandling);
+      processLinks(printWindow.document, linkHandling);
+      console.log("[Popup] Links processed");
 
       setTimeout(() => {
         console.log("[Popup] Triggering print dialog...");
@@ -206,6 +269,21 @@
         >
           <option value="Letter">Letter (8.5" × 11")</option>
           <option value="A4">A4 (210mm × 297mm)</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="linkHandling" class="block text-sm font-medium text-gray-700 mb-1">
+          Links
+        </label>
+        <select
+          id="linkHandling"
+          bind:value={linkHandling}
+          class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="references">Link References</option>
+          <option value="embed">Embed Links</option>
+          <option value="none">Don't Include</option>
         </select>
       </div>
 
