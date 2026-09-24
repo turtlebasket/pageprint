@@ -10,6 +10,9 @@ out
 dist
 *.tgz
 
+# local browser QA artifacts
+dogfood-output/
+
 # code coverage
 coverage
 *.lcov

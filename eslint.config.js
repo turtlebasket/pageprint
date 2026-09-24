@@ -33,6 +33,8 @@ export default [
         URL: "readonly",
         Blob: "readonly",
         FileReader: "readonly",
+        TextDecoder: "readonly",
+        btoa: "readonly",
       },
     },
     plugins: {
@@ -74,6 +76,8 @@ export default [
         URL: "readonly",
         Blob: "readonly",
         FileReader: "readonly",
+        TextDecoder: "readonly",
+        btoa: "readonly",
       },
     },
     plugins: {

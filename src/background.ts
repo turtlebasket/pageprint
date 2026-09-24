@@ -1,4 +1,5 @@
 import { match } from "ts-pattern";
+import { fetchImageDataUrl } from "./image-fetch";
 import { PrintStyles } from "./print-styles";
 import {
   MessageType,
@@ -24,6 +25,9 @@ chrome.runtime.onMessage.addListener(
       })
       .with({ type: MessageType.GENERATE_PDF }, (req) => {
         handleGeneratePDF(req.data, sendResponse);
+      })
+      .with({ type: MessageType.FETCH_IMAGE_DATA }, (req) => {
+        handleFetchImageData(req.data, sendResponse);
       })
       .with({ type: MessageType.CHECK_READABILITY }, () => {
         handleCheckReadability(sendResponse);
@@ -72,9 +76,9 @@ async function ensureContentScript(tabId: number): Promise<void> {
     // Check if content script is already loaded before injecting
     const [result] = await chrome.scripting.executeScript({
       target: { tabId },
-      func: () => !!window.__pageprint_loaded,
+      func: () => window.__pageprint_loaded === true,
     });
-    if (result?.result) {
+    if (result?.result === true) {
       console.log("[Background] Content script already loaded");
       return;
     }
@@ -176,6 +180,22 @@ async function handleCheckReadability(
   } catch (error) {
     console.error("[Background] Failed to check readability:", error);
     sendResponse({ success: true, data: false });
+  }
+}
+
+async function handleFetchImageData(
+  { pageUrl, url }: { pageUrl: string; url: string },
+  sendResponse: (response: MessageResponse<string | null>) => void
+): Promise<void> {
+  try {
+    const dataUrl = await fetchImageDataUrl(url, { referrer: pageUrl });
+    sendResponse({ success: true, data: dataUrl });
+  } catch (error) {
+    console.error("[Background] Failed to fetch image data:", error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch image data",
+    });
   }
 }
 

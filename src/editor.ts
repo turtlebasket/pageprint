@@ -5,13 +5,16 @@
  * Reads configuration from a <script type="application/json" id="pageprint-config"> element.
  */
 
+import { processLinksForPrint } from "./link-processor";
+import type { LinkHandling } from "./types";
+
 interface EditorConfig {
   columns: number;
   fontSize: number;
   verticalMargin: number;
   horizontalMargin: number;
   pageSize: string;
-  linkHandling: string;
+  linkHandling: LinkHandling;
   printCSS: string;
   title: string;
   excerpt: string;
@@ -22,7 +25,7 @@ interface EditorConfig {
 
 const SELECTABLE = "p, h1, h2, h3, h4, h5, h6, figure, img, blockquote, pre, table, ul, ol, hr";
 
-function init() {
+function init(): void {
   const configEl = document.getElementById("pageprint-config");
   if (!configEl) return;
 
@@ -64,45 +67,7 @@ function init() {
   }
 }
 
-function processLinksForPrint(doc: Document, mode: string) {
-  if (mode === "embed") return;
-  const article = doc.querySelector(".readable-content");
-  if (!article) return;
-  const anchors = article.querySelectorAll("a[href]");
-
-  if (mode === "none") {
-    anchors.forEach((a) => {
-      const t = doc.createTextNode(a.textContent || "");
-      a.parentNode?.replaceChild(t, a);
-    });
-  } else if (mode === "references") {
-    const links: { id: number; url: string }[] = [];
-    let counter = 0;
-    anchors.forEach((a) => {
-      const href = a.getAttribute("href");
-      if (!href) return;
-      counter++;
-      links.push({ id: counter, url: href });
-      const t = doc.createTextNode(`${a.textContent || ""} [L${counter}]`);
-      a.parentNode?.replaceChild(t, a);
-    });
-    if (links.length > 0) {
-      const sec = doc.createElement("section");
-      sec.className = "link-references";
-      sec.innerHTML =
-        "<h2>Links</h2>" +
-        links
-          .map(
-            (l) =>
-              `<div class="link-reference-item"><span class="link-reference-id">[L${l.id}]</span>${l.url}</div>`
-          )
-          .join("\n");
-      article.appendChild(sec);
-    }
-  }
-}
-
-function doPrint(config: EditorConfig, article: Element) {
+function doPrint(config: EditorConfig, article: Element): void {
   const clone = article.cloneNode(true) as HTMLElement;
   clone.querySelectorAll(".excluded").forEach((el) => el.remove());
 

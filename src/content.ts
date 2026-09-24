@@ -9,12 +9,12 @@ import {
 
 declare global {
   interface Window {
-    extractReadableContent: () => ExtractedContent | null;
+    extractReadableContent: () => Promise<ExtractedContent | null>;
     __pageprint_loaded?: boolean;
   }
 }
 
-if (window.__pageprint_loaded) {
+if (window.__pageprint_loaded === true) {
   console.log("[Content Script] Already loaded, skipping initialization");
 } else {
   window.__pageprint_loaded = true;
@@ -72,6 +72,13 @@ if (window.__pageprint_loaded) {
         .with({ type: MessageType.GENERATE_PDF }, () => {
           console.log("[Content Script] Ignoring GENERATE_PDF message");
         })
+        .with({ type: MessageType.FETCH_IMAGE_DATA }, () => {
+          console.log("[Content Script] Ignoring FETCH_IMAGE_DATA message");
+          sendResponse({
+            success: false,
+            error: "Image fetching is handled by the background worker",
+          });
+        })
         .exhaustive();
 
       return true;
@@ -85,7 +92,7 @@ if (window.__pageprint_loaded) {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       console.log("[Content Script] Calling ContentExtractor.extractContent...");
-      const content = ContentExtractor.extractContent(document);
+      const content = await ContentExtractor.extractContent(document);
 
       if (!content) {
         console.error("[Content Script] ContentExtractor returned null");
@@ -100,7 +107,7 @@ if (window.__pageprint_loaded) {
     }
   }
 
-  window.extractReadableContent = () => {
+  window.extractReadableContent = (): Promise<ExtractedContent | null> => {
     return ContentExtractor.extractContent(document);
   };
 }

@@ -12,7 +12,7 @@
     "build:extension:dev": "bun build.ts --dev",
     "build:popup": "vite build",
     "package": "bun run build && bun run zip",
-    "zip": "cd dist && zip -r ../pageprint.zip .",
+    "zip": "cd dist && zip -FS -r ../pageprint.zip . -x '*.DS_Store'",
     "release": "./release-version",
     "test": "bun test",
     "lint": "eslint src",

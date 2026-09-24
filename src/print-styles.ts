@@ -165,6 +165,36 @@ export class PrintStyles {
         margin-right: 0.5rem;
       }
 
+      .pageprint-footnote-ref {
+        vertical-align: super;
+        font-size: 0.72em;
+        line-height: 0;
+        margin-left: 0.08em;
+      }
+
+      .pageprint-footnotes {
+        margin-top: 2rem;
+        padding-top: 1rem;
+        border-top: 1px solid #ccc;
+      }
+
+      .pageprint-footnotes h2 {
+        font-size: 1.1rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .pageprint-footnotes ol {
+        break-inside: auto;
+        padding-left: 1.4rem;
+      }
+
+      .pageprint-footnote {
+        break-inside: avoid;
+        margin: 0 0 0.6rem 0;
+        padding-left: 0.2rem;
+        font-size: 0.9em;
+      }
+
       code {
         font-family: "Courier New", monospace;
         font-size: 0.9em;

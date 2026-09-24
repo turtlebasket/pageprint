@@ -1,130 +1,70 @@
-import { Readability, isProbablyReaderable } from "@mozilla/readability";
-import type { ExtractedContent } from "./types";
+import { selectContentProcessor } from "./content-processors/registry";
+import type { ContentProcessor, ContentProcessorContext } from "./content-processors/types";
+import { fetchImageDataUrl } from "./image-fetch";
+import { processImagesForStandaloneDocument, type ImageDataFetcher } from "./image-inliner";
+import {
+  MessageType,
+  type ExtractedContent,
+  type MessageRequest,
+  type MessageResponse,
+} from "./types";
+
+interface ExtractContentOptions {
+  imageFetcher?: ImageDataFetcher;
+}
 
 export class ContentExtractor {
   public static isProbablyReaderable(document: Document): boolean {
     try {
-      const result = isProbablyReaderable(document);
-      console.log("[ContentExtractor] Readability check result:", result);
+      const context = this.createProcessorContext(document);
+      const processor = selectContentProcessor(document, context);
+      const result = processor.isReadable(document, context);
+      console.log(`[ContentExtractor] ${processor.id} readability check result:`, result);
       return result;
     } catch (error) {
       console.error("[ContentExtractor] Readability check failed:", error);
       return false;
     }
   }
-  private static stripUnwantedElements(htmlContent: string): string {
-    const tempDiv = window.document.createElement("div");
+  private static async stripUnwantedElements(
+    htmlContent: string,
+    imageFetcher: ImageDataFetcher,
+    processor: ContentProcessor,
+    context: ContentProcessorContext,
+    ownerDocument: Document
+  ): Promise<string> {
+    const tempDiv = ownerDocument.createElement("div");
     tempDiv.innerHTML = htmlContent;
 
-    const unwantedSelectors = ["video", "audio", "iframe", "embed", "object", "source", "track"];
+    await processor.normalizeContent(tempDiv, context);
+
+    const unwantedSelectors = ["video", "audio", "iframe", "embed", "object", "track"];
 
     unwantedSelectors.forEach((selector) => {
       const elements = tempDiv.querySelectorAll(selector);
       elements.forEach((el) => el.remove());
     });
 
-    this.processImages(tempDiv);
+    await processImagesForStandaloneDocument(tempDiv, context.pageUrl, imageFetcher);
 
     return tempDiv.innerHTML;
   }
 
-  private static processImages(container: HTMLElement): void {
-    const images = container.querySelectorAll("img");
-    const baseUrl = window.location.href;
-
-    images.forEach((img) => {
-      const lazyAttributes = [
-        "data-src",
-        "data-lazy-src",
-        "data-original",
-        "data-srcset",
-        "data-lazy-srcset",
-      ];
-
-      for (const attr of lazyAttributes) {
-        if (img.hasAttribute(attr)) {
-          const value = img.getAttribute(attr);
-          if (value !== null && value.length > 0 && (!img.src || img.src === baseUrl)) {
-            if (attr.includes("srcset")) {
-              img.setAttribute("srcset", value);
-            } else {
-              img.src = value;
-            }
-          }
-        }
-      }
-
-      if (img.src && img.src.length > 0 && img.src !== baseUrl) {
-        if (!img.src.startsWith("data:") && !img.src.startsWith("http")) {
-          try {
-            const absoluteUrl = new URL(img.src, baseUrl);
-            img.src = absoluteUrl.href;
-          } catch {
-            img.remove();
-            return;
-          }
-        }
-      } else {
-        img.remove();
-        return;
-      }
-
-      if (img.hasAttribute("srcset")) {
-        const srcset = img.getAttribute("srcset");
-        if (srcset !== null && srcset.length > 0) {
-          const processedSrcset = srcset
-            .split(",")
-            .map((entry) => {
-              const parts = entry.trim().split(/\s+/);
-              const url = parts[0];
-              const descriptor = parts[1];
-              if (
-                url !== undefined &&
-                url.length > 0 &&
-                !url.startsWith("data:") &&
-                !url.startsWith("http")
-              ) {
-                try {
-                  const absoluteUrl = new URL(url, baseUrl);
-                  return descriptor !== undefined
-                    ? `${absoluteUrl.href} ${descriptor}`
-                    : absoluteUrl.href;
-                } catch {
-                  return "";
-                }
-              }
-              return entry.trim();
-            })
-            .filter((entry) => entry.length > 0)
-            .join(", ");
-
-          if (processedSrcset.length > 0) {
-            img.setAttribute("srcset", processedSrcset);
-          }
-        }
-      }
-
-      [
-        "loading",
-        "data-src",
-        "data-lazy-src",
-        "data-original",
-        "data-srcset",
-        "data-lazy-srcset",
-      ].forEach((attr) => img.removeAttribute(attr));
-    });
-  }
-
-  public static extractContent(document: Document): ExtractedContent | null {
+  public static async extractContent(
+    document: Document,
+    options: ExtractContentOptions = {}
+  ): Promise<ExtractedContent | null> {
     try {
-      console.log("[ContentExtractor] Starting Readability extraction...");
+      const context = this.createProcessorContext(document);
+      const processor = selectContentProcessor(document, context);
+      console.log(`[ContentExtractor] Starting ${processor.id} extraction...`);
 
       const documentClone = document.cloneNode(true) as Document;
-      const reader = new Readability(documentClone);
-      const article = reader.parse();
+      this.copyLiveImageSources(document, documentClone);
+      const article = await processor.extract(documentClone, context);
 
       if (!article) {
-        console.error("[ContentExtractor] Readability returned null");
+        console.error(`[ContentExtractor] ${processor.id} processor returned null`);
         return null;
       }
 
@@ -140,13 +80,20 @@ export class ContentExtractor {
 
       const excerpt = article.excerpt || "";
 
-      const cleanedContent = this.stripUnwantedElements(article.content);
+      const cleanedContent = await this.stripUnwantedElements(
+        article.content,
+        options.imageFetcher ?? this.fetchImageAsDataUrl,
+        processor,
+        context,
+        document
+      );
 
       console.log("[ContentExtractor] Extraction successful:", {
         title: article.title,
         contentLength: cleanedContent.length,
         byline,
         excerpt: excerpt.substring(0, 100),
+        processor: processor.id,
       });
 
       return {
@@ -160,6 +107,76 @@ export class ContentExtractor {
       };
     } catch (error) {
       console.error("[ContentExtractor] Content extraction failed:", error);
+      return null;
+    }
+  }
+
+  private static createProcessorContext(document: Document): ContentProcessorContext {
+    const pageUrl =
+      document.URL || (typeof window !== "undefined" ? window.location.href : "about:blank");
+
+    try {
+      return { pageUrl, url: new URL(pageUrl) };
+    } catch {
+      return { pageUrl: "about:blank", url: new URL("about:blank") };
+    }
+  }
+
+  private static async fetchImageAsDataUrl(url: string): Promise<string | null> {
+    if (url.startsWith("data:image/")) {
+      return url;
+    }
+
+    const shouldUseBackgroundFirst = !url.startsWith("blob:");
+
+    if (shouldUseBackgroundFirst) {
+      const backgroundResult = await ContentExtractor.fetchImageDataViaBackground(url);
+      if (backgroundResult !== null) {
+        return backgroundResult;
+      }
+    }
+
+    const directResult = await fetchImageDataUrl(url, { referrer: window.location.href });
+    if (directResult !== null || !url.startsWith("blob:")) {
+      return directResult;
+    }
+
+    return ContentExtractor.fetchImageDataViaBackground(url);
+  }
+
+  private static copyLiveImageSources(sourceDocument: Document, clonedDocument: Document): void {
+    const sourceImages = Array.from(sourceDocument.querySelectorAll("img"));
+    const clonedImages = Array.from(clonedDocument.querySelectorAll("img"));
+
+    sourceImages.forEach((sourceImage, index) => {
+      const clonedImage = clonedImages[index];
+      if (clonedImage === undefined) {
+        return;
+      }
+
+      const currentSrc = sourceImage.currentSrc.trim();
+      if (currentSrc.length > 0) {
+        clonedImage.setAttribute("data-pageprint-current-src", currentSrc);
+      }
+    });
+  }
+
+  private static async fetchImageDataViaBackground(url: string): Promise<string | null> {
+    if (typeof chrome === "undefined" || typeof chrome.runtime?.sendMessage !== "function") {
+      return null;
+    }
+
+    try {
+      const response = await chrome.runtime.sendMessage<
+        MessageRequest,
+        MessageResponse<string | null>
+      >({
+        type: MessageType.FETCH_IMAGE_DATA,
+        data: { pageUrl: window.location.href, url },
+      });
+
+      return response.success ? response.data : null;
+    } catch {
       return null;
     }
   }
